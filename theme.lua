@@ -10,7 +10,7 @@ local theme = {}
 -- [[ Desktop ]]
 
 theme.wibox_position = "top"
-theme.wallpaper = os.getenv("HOME") .. "/.config/awesome/myAwesomewmConfig/wallpaper_2.jpg"
+-- theme.wallpaper = os.getenv("HOME") .. "/.config/awesome/myAwesomewmConfig/wallpaper_2.jpg"
 theme.wallpaper_color = "#292e42"
 theme.useless_gap = dpi(7)
 

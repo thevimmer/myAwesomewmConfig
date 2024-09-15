@@ -49,7 +49,6 @@ local modkey = "Mod4"
 
 awful.layout.layouts = {
 	awful.layout.suit.tile,
-	awful.layout.suit.magnifier,
 	awful.layout.suit.max,
 	awful.layout.suit.floating,
 }
@@ -88,7 +87,7 @@ local function update_tag_name(tag)
 		tag.name = tag.num .. ": "
 	elseif is_client_class(tag, "Zathura") then
 		tag.name = tag.num .. ": "
-	elseif is_client_class(tag, terminal) then
+	elseif is_client_class(tag, "Alacritty") then
 		tag.name = tag.num .. ": "
 	elseif is_client_class(tag, "fzf_run") then
 		tag.name = tag.num
@@ -117,6 +116,132 @@ local function move_to_the_last_selected_win()
 		client.focus = last_client
 		last_client:raise()
 	end
+end
+
+local function update_battery(batterywidget)
+	local capacity_file, err = io.open("/sys/class/power_supply/BAT0/capacity", "r")
+	if not capacity_file then
+		naughty.notify({
+			preset = naughty.config.presets.critical,
+			title = "Oops, error when reading the battery capacity sys file: " .. err,
+			text = awesome.startup_errors,
+		})
+		-- stop the timer
+		return
+	end
+	local battery_capacity = tonumber(capacity_file:read("a"))
+	capacity_file:close()
+
+	local status_file, err = io.open("/sys/class/power_supply/BAT0/status", "r")
+	if not status_file then
+		naughty.notify({
+			preset = naughty.config.presets.critical,
+			title = "Oops, error when reading the battery capacity file: " .. err,
+			text = awesome.startup_errors,
+		})
+		-- stop the timer
+		return
+	end
+	local battery_status = status_file:read("a"):match("^%s*(.-)%s*$")
+	status_file:close()
+
+	local is_charging = battery_status == "Charging"
+	local battery_icon
+	if battery_capacity == 100 then
+		if is_charging then
+			battery_icon = "󰂅"
+		else
+			battery_icon = "󰁹"
+		end
+	elseif battery_capacity >= 90 then
+		if is_charging then
+			battery_icon = "󰂋"
+		else
+			battery_icon = "󰂂"
+		end
+	elseif battery_capacity >= 80 then
+		if is_charging then
+			battery_icon = "󰂊"
+		else
+			battery_icon = "󰂁"
+		end
+	elseif battery_capacity >= 70 then
+		if is_charging then
+			battery_icon = "󰢞"
+		else
+			battery_icon = "󰂀"
+		end
+	elseif battery_capacity >= 60 then
+		if is_charging then
+			battery_icon = "󰂈"
+		else
+			battery_icon = "󰁿"
+		end
+	elseif battery_capacity >= 50 then
+		if is_charging then
+			battery_icon = "󰂈"
+		else
+			battery_icon = "󰁾"
+		end
+	elseif battery_capacity >= 40 then
+		if is_charging then
+			battery_icon = "󰂈"
+		else
+			battery_icon = "󰁽"
+		end
+	elseif battery_capacity >= 30 then
+		if is_charging then
+			battery_icon = "󰂇"
+		else
+			battery_icon = "󰁼"
+		end
+	elseif battery_capacity >= 20 then
+		if is_charging then
+			battery_icon = "󰂆"
+		else
+			battery_icon = "󰁻"
+		end
+	else
+		if is_charging then
+			battery_icon = "󰢜"
+		else
+			battery_icon = "󰁺"
+		end
+	end
+
+	batterywidget.text = " " .. battery_icon .. " " .. battery_capacity .. "% "
+end
+
+local function update_brightness(mybrightnesswidget)
+	local max_brightness_file, err = io.open("/sys/class/backlight/intel_backlight/max_brightness", "r")
+	if not max_brightness_file then
+		naughty.notify({
+			preset = naughty.config.presets.critical,
+			title = "Oops, error when reading the max brightness sys file: " .. err,
+			text = awesome.startup_errors,
+		})
+		-- stop the timer
+		return
+	end
+	local max_brightness = tonumber(max_brightness_file:read("a"))
+	max_brightness_file:close()
+
+	local brightness_file, err = io.open("/sys/class/backlight/intel_backlight/brightness", "r")
+	if not brightness_file then
+		naughty.notify({
+			preset = naughty.config.presets.critical,
+			title = "Oops, error when reading the brightness sys file: " .. err,
+			text = awesome.startup_errors,
+		})
+		-- stop the timer
+		return
+	end
+	local brightness = tonumber(brightness_file:read("a"))
+	brightness_file:close()
+
+	local brightness_perc = math.floor((brightness / max_brightness) * 100)
+
+	mybrightnesswidget.text = " 󰖨 " .. brightness_perc .. "% "
 end
 
 -- [[ Wibox ]]
@@ -190,6 +315,19 @@ local function mytaglist_filter(t)
 	return #t:clients() > 0 or t == awful.screen.focused().selected_tag
 end
 
+local mybatterywidget = wibox.widget.textbox()
+update_battery(mybatterywidget)
+
+local mybrightnesswidget = wibox.widget.textbox()
+update_brightness(mybrightnesswidget)
+
+local mytimer = gears.timer({ timeout = 1 })
+mytimer:connect_signal("timeout", function()
+	update_battery(mybatterywidget)
+	update_brightness(mybrightnesswidget)
+end)
+mytimer:start()
+
 awful.screen.connect_for_each_screen(function(s)
 	set_wallpaper(s)
 
@@ -214,6 +352,8 @@ awful.screen.connect_for_each_screen(function(s)
 		nil,
 		{
 			layout = wibox.layout.fixed.horizontal,
+			mybrightnesswidget,
+			mybatterywidget,
 			mytextclock,
 		},
 		layout = wibox.layout.align.horizontal,
@@ -292,6 +432,10 @@ globalkeys = gears.table.join(
 	awful.key({ modkey }, "p", function()
 		awful.spawn.with_shell(terminal .. ' --class fzf_run -e "$HOME/Scripts/fzf_run.sh"')
 	end, { description = "open fzf_run", group = "launcher" }),
+
+	awful.key({ modkey }, "d", function()
+		awful.spawn("slock")
+	end, { description = "lock the screen", group = "awesome" }),
 
 	awful.key({ modkey }, "s", function()
 		awful.spawn.with_shell('scrot -s -F "$HOME/Screenshots/$(date +"%s").png"')
