@@ -126,7 +126,6 @@ local function update_battery(batterywidget)
 			title = "Oops, error when reading the battery capacity sys file: " .. err,
 			text = awesome.startup_errors,
 		})
-		-- stop the timer
 		return
 	end
 	local battery_capacity = tonumber(capacity_file:read("a"))
@@ -139,7 +138,6 @@ local function update_battery(batterywidget)
 			title = "Oops, error when reading the battery capacity file: " .. err,
 			text = awesome.startup_errors,
 		})
-		-- stop the timer
 		return
 	end
 	local battery_status = status_file:read("a"):match("^%s*(.-)%s*$")
@@ -220,7 +218,6 @@ local function update_brightness(mybrightnesswidget)
 			title = "Oops, error when reading the max brightness sys file: " .. err,
 			text = awesome.startup_errors,
 		})
-		-- stop the timer
 		return
 	end
 	local max_brightness = tonumber(max_brightness_file:read("a"))
@@ -233,7 +230,6 @@ local function update_brightness(mybrightnesswidget)
 			title = "Oops, error when reading the brightness sys file: " .. err,
 			text = awesome.startup_errors,
 		})
-		-- stop the timer
 		return
 	end
 	local brightness = tonumber(brightness_file:read("a"))
@@ -242,6 +238,41 @@ local function update_brightness(mybrightnesswidget)
 	local brightness_perc = math.floor((brightness / max_brightness) * 100)
 
 	mybrightnesswidget.text = " 󰖨 " .. brightness_perc .. "% "
+end
+
+local function update_capslock(mycapslockwidget)
+	local handle = io.popen("xset -q | grep Caps")
+	if not handle then
+		naughty.notify({
+			preset = naughty.config.presets.critical,
+			title = "Oops, error when reading the command output: " .. err,
+			text = awesome.startup_errors,
+		})
+		return
+	end
+	local output = handle:read("*a"):match("^%s*(.-)%s*$" or "")
+	handle:close()
+	local is_capslock_on = output:find("^00: Caps Lock:   on")
+	if is_capslock_on then
+		mycapslockwidget.text = " 󰪛 "
+	else
+		mycapslockwidget.text = ""
+	end
+end
+
+local function update_soundvolume(mysoundvolumewidget)
+	local handle = io.popen("amixer get Master | grep -oP '\\d+%' | head -n 1")
+	if not handle then
+		naughty.notify({
+			preset = naughty.config.presets.critical,
+			title = "Oops, error when reading the command output: " .. err,
+			text = awesome.startup_errors,
+		})
+		return
+	end
+	local output = handle:read("*a"):match("^%s*(.-)%s*$" or "")
+	handle:close()
+	mysoundvolumewidget.text = " 󰕾 " .. output .. " "
 end
 
 -- [[ Wibox ]]
@@ -321,10 +352,18 @@ update_battery(mybatterywidget)
 local mybrightnesswidget = wibox.widget.textbox()
 update_brightness(mybrightnesswidget)
 
-local mytimer = gears.timer({ timeout = 1 })
+local mycapslockwidget = wibox.widget.textclock()
+update_capslock(mycapslockwidget)
+
+local mysoundvolumewidget = wibox.widget.textclock()
+update_soundvolume(mysoundvolumewidget)
+
+local mytimer = gears.timer({ timeout = 0.25 })
 mytimer:connect_signal("timeout", function()
 	update_battery(mybatterywidget)
 	update_brightness(mybrightnesswidget)
+	update_capslock(mycapslockwidget)
+	update_soundvolume(mysoundvolumewidget)
 end)
 mytimer:start()
 
@@ -352,6 +391,8 @@ awful.screen.connect_for_each_screen(function(s)
 		nil,
 		{
 			layout = wibox.layout.fixed.horizontal,
+			mycapslockwidget,
+			mysoundvolumewidget,
 			mybrightnesswidget,
 			mybatterywidget,
 			mytextclock,
