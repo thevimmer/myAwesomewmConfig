@@ -1,0 +1,7 @@
+scrot
+alacritty
+fzf
+i3lock-color
+i2c-tools (sensors)
+networkmanager
+ttf-jetbrains-mono-nerd

@@ -49,9 +49,9 @@ local modkey = "Mod4"
 
 awful.layout.layouts = {
 	awful.layout.suit.tile,
-	awful.layout.suit.max,
-	awful.layout.suit.floating,
 }
+
+local default_layout = awful.layout.layouts[1]
 
 -- [[ Theme ]]
 
@@ -69,6 +69,10 @@ local function set_wallpaper(s)
 	end
 end
 
+local function h(color)
+	return string.gsub(color, "#", "")
+end
+
 local function is_client_class(tag, className)
 	for _, c in ipairs(tag:clients()) do
 		if c.class == className then
@@ -78,14 +82,14 @@ local function is_client_class(tag, className)
 	return false
 end
 
-local function update_tag_name(tag)
+local function update_tagname(tag)
 	if #tag:clients() <= 0 then
 		tag.name = tag.num
 	elseif is_client_class(tag, "firefox") then
 		tag.name = tag.num .. ": "
 	elseif is_client_class(tag, "Spotify") then
 		tag.name = tag.num .. ": "
-	elseif is_client_class(tag, "Zathura") then
+	elseif is_client_class(tag, "MuPDF") then
 		tag.name = tag.num .. ": "
 	elseif is_client_class(tag, "Alacritty") then
 		tag.name = tag.num .. ": "
@@ -95,7 +99,7 @@ local function update_tag_name(tag)
 		tag.name = tag.num .. ": 󰘔"
 	end
 
-	if client.focus and client.focus.sticky then
+	if tag.is_win_sticky then
 		tag.name = tag.name .. "~"
 	end
 end
@@ -104,7 +108,7 @@ local last_client = nil
 
 local function move_to_the_last_selected_win()
 	if last_client then
-		if last_client.screen then
+		if last_client.screen then --FIX this line causes an 'invalid object' error
 			awful.screen.focus(last_client.screen)
 		end
 
@@ -271,17 +275,83 @@ local function update_soundvolume(mysoundvolumewidget)
 		return
 	end
 	local output = handle:read("*a"):match("^%s*(.-)%s*$" or "")
+	local icon = "󰕾"
+	local volume = string.gsub(output, "%%", "")
+	volume = tonumber(volume)
+	if volume <= 0 then
+		icon = "󰖁"
+	end
 	handle:close()
-	mysoundvolumewidget.text = " 󰕾 " .. output .. " "
+	mysoundvolumewidget.text = " " .. icon .. " " .. output .. " "
+end
+
+local function update_temperature(mytemperaturewidget)
+	local handle = io.popen("sensors | grep 'acpitz-acpi-0' -A 2 | grep 'temp1:' | awk '{print $2}'")
+	if not handle then
+		naughty.notify({
+			preset = naughty.config.presets.critical,
+			title = "Oops, error when reading the command output: " .. err,
+			text = awesome.startup_errors,
+		})
+		return
+	end
+	local output = handle:read("*a"):match("^%s*(.-)%s*$" or "")
+	handle:close()
+	local value_s = string.gsub(output, "+", "")
+	value_s = string.gsub(value_s, "°C", "")
+	local value = tonumber(value_s)
+	local icon
+	if value <= 40 then
+		icon = ""
+	elseif value <= 50 then
+		icon = ""
+	elseif value <= 60 then
+		icon = ""
+	elseif value <= 70 then
+		icon = ""
+	else
+		icon = ""
+	end
+	mytemperaturewidget.text = " " .. icon .. " " .. value .. "°C "
+end
+
+local function update_wifisignal(mywifisignalwidget)
+	awful.spawn.easy_async_with_shell(
+		"nmcli -t -f active,ssid,signal dev wifi | grep '^yes' | awk -F: '{print $3}' | awk '{print $1}'",
+		function(stdout)
+			local signal_strength = tonumber(stdout:match("^[^\n\r]+"))
+
+			if not signal_strength then
+				mywifisignalwidget.text = " 󰤮 "
+			elseif signal_strength >= 80 then
+				mywifisignalwidget.text = " 󰤨 "
+			elseif signal_strength >= 60 then
+				mywifisignalwidget.text = " 󰤥 "
+			elseif signal_strength >= 40 then
+				mywifisignalwidget.text = " 󰤢 "
+			else
+				mywifisignalwidget.text = " 󰤟 "
+			end
+		end
+	)
+end
+
+local function setup_tags(s)
+	local default_tags_names = { "1", "2", "3", "4", "5", "6", "7 ", "8", "9" }
+
+	for i, name in ipairs(default_tags_names) do
+		awful.tag.add(name, {
+			screen = s,
+			layout = awful.layout.suit.tile,
+			num = i,
+			is_win_sticky = false,
+		}, default_layout)
+	end
 end
 
 -- [[ Wibox ]]
 
-local default_tags_names = { "1", "2", "3", "4", "5", "6", "7 ", "8", "9" }
-
-local n_tags = 9 -- and for some raison a mystrious number
-
-local default_layout = awful.layout.layouts[1]
+local n_tags = 9 --NOTE and for some raison a mystrious number
 
 local mytextclock_format = '<span foreground="' .. beautiful.textclock_fg .. '"> %a %b %d, %H:%M </span>'
 local mytextclock = wibox.widget.textclock(mytextclock_format)
@@ -352,25 +422,39 @@ update_battery(mybatterywidget)
 local mybrightnesswidget = wibox.widget.textbox()
 update_brightness(mybrightnesswidget)
 
-local mycapslockwidget = wibox.widget.textclock()
+local mycapslockwidget = wibox.widget.textbox()
 update_capslock(mycapslockwidget)
 
-local mysoundvolumewidget = wibox.widget.textclock()
+local mysoundvolumewidget = wibox.widget.textbox()
 update_soundvolume(mysoundvolumewidget)
 
-local mytimer = gears.timer({ timeout = 0.25 })
+local mytemperaturewidget = wibox.widget.textbox()
+update_temperature(mytemperaturewidget)
+
+local mywifisignalwidget = wibox.widget.textbox()
+update_wifisignal(mywifisignalwidget)
+
+local mytimer = gears.timer({ timeout = 1 })
 mytimer:connect_signal("timeout", function()
 	update_battery(mybatterywidget)
 	update_brightness(mybrightnesswidget)
 	update_capslock(mycapslockwidget)
 	update_soundvolume(mysoundvolumewidget)
+	update_temperature(mytemperaturewidget)
+	update_wifisignal(mywifisignalwidget)
 end)
 mytimer:start()
 
+gears.timer({
+	timeout = 10,
+	call_now = true,
+	autostart = true,
+	callback = function() end,
+})
+
 awful.screen.connect_for_each_screen(function(s)
 	set_wallpaper(s)
-
-	awful.tag(default_tags_names, s, default_layout)
+	setup_tags(s)
 
 	s.mytaglist = awful.widget.taglist({
 		screen = s,
@@ -391,15 +475,45 @@ awful.screen.connect_for_each_screen(function(s)
 		nil,
 		{
 			layout = wibox.layout.fixed.horizontal,
-			mycapslockwidget,
+			-- mycapslockwidget,
+			-- wibox.widget.systray(),
+			mywifisignalwidget,
 			mysoundvolumewidget,
+			mytemperaturewidget,
 			mybrightnesswidget,
 			mybatterywidget,
 			mytextclock,
 		},
 		layout = wibox.layout.align.horizontal,
 	})
+	--ADD an indication of the current layout
 end)
+
+-- [[ Commands ]]
+
+local locker_cmd = "i3lock --color="
+	.. h(beautiful.wallpaper_color)
+	.. " --keyhl-color="
+	.. h(beautiful.fg_focus)
+	.. " --inside-color="
+	.. h(beautiful.bg_normal)
+	.. " --ring-color="
+	.. h(beautiful.fg_focus)
+	.. " --line-color="
+	.. h(beautiful.bg_normal)
+	.. " --separator-color="
+	.. h(beautiful.bg_normal)
+	.. " --time-color="
+	.. h(beautiful.fg_normal)
+	.. " --date-color="
+	.. h(beautiful.fg_normal)
+	.. " --verif-color="
+	.. h(beautiful.fg_normal)
+	.. " --wrong-color="
+	.. h(beautiful.bg_urgent)
+	.. " --layout-color="
+	.. h(beautiful.fg_normal)
+	.. " --indicator --radius=100 --clock"
 
 -- [[ Key Bindings ]]
 
@@ -431,7 +545,7 @@ globalkeys = gears.table.join(
 		{ modkey },
 		"Tab",
 		move_to_the_last_selected_win,
-		{ description = "Move to the last selected window", group = "client" }
+		{ description = "move to the last selected window", group = "client" }
 	),
 
 	awful.key({ modkey }, "l", function()
@@ -473,9 +587,10 @@ globalkeys = gears.table.join(
 	awful.key({ modkey }, "p", function()
 		awful.spawn.with_shell(terminal .. ' --class fzf_run -e "$HOME/Scripts/fzf_run.sh"')
 	end, { description = "open fzf_run", group = "launcher" }),
+	--FIX the window is slow to open
 
 	awful.key({ modkey }, "d", function()
-		awful.spawn("slock")
+		awful.spawn(locker_cmd)
 	end, { description = "lock the screen", group = "awesome" }),
 
 	awful.key({ modkey }, "s", function()
@@ -531,6 +646,15 @@ clientkeys = gears.table.join(
 
 	awful.key({ modkey }, "0", function(c)
 		c.sticky = not c.sticky
+		for _, tag in ipairs(c:tags()) do
+			if c.sticky then
+				tag.name = tag.name .. "~"
+				tag.is_win_sticky = true
+			else
+				tag.name = string.gsub(tag.name, "~", "")
+				tag.is_win_sticky = false
+			end
+		end
 	end, { description = "toggle stickiness", group = "client" })
 )
 
@@ -680,13 +804,13 @@ client.connect_signal("manage", function(c)
 		awful.placement.no_offscreen(c)
 	end
 	for _, t in ipairs(c:tags()) do
-		update_tag_name(t)
+		update_tagname(t)
 	end
 end)
 
 client.connect_signal("unmanage", function(c)
 	for _, t in ipairs(c:tags()) do
-		update_tag_name(t)
+		update_tagname(t)
 	end
 end)
 
@@ -700,11 +824,11 @@ client.connect_signal("unfocus", function(c)
 end)
 
 client.connect_signal("tagged", function(c, t)
-	update_tag_name(t)
+	update_tagname(t)
 end)
 
 client.connect_signal("untagged", function(c, t)
-	update_tag_name(t)
+	update_tagname(t)
 end)
 
 client.connect_signal("mouse::enter", function(c)
@@ -714,17 +838,11 @@ end)
 screen.connect_signal("property::geometry", set_wallpaper)
 
 tag.connect_signal("property::clients", function(t)
-	update_tag_name(t)
+	update_tagname(t)
 end)
 
 tag.connect_signal("property::selected", function(t)
-	update_tag_name(t)
+	update_tagname(t)
 end)
 
--- [[ Startup ]]
-
-for s in screen do
-	for i, t in ipairs(s.tags) do
-		t.num = i
-	end
-end
+--FIX select primary screen by default at startup
