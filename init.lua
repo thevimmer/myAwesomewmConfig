@@ -42,8 +42,13 @@ end
 
 -- [[ Definitions ]]
 
-local terminal = "alacritty"
+local terminal = "alacritty" --NOTE make sure you change the classname too below
 local modkey = "Mod4"
+local default_widget_text = "n/a"
+
+-- [[ Cache ]]
+
+local cache = {}
 
 -- [[ Layouts ]]
 
@@ -59,286 +64,100 @@ beautiful.init(os.getenv("HOME") .. "/.config/awesome/myAwesomewmConfig/theme.lu
 
 naughty.config.defaults["icon_size"] = beautiful.notification_icon_size
 
--- [[ Functions ]]
+-- [[ Utils ]]
 
-local function set_wallpaper(s)
-	if beautiful.wallpaper then
-		gears.wallpaper.maximized(beautiful.wallpaper)
-	else
-		gears.wallpaper.set(beautiful.wallpaper_color)
+local function read_file(filename)
+	local file, _ = io.open(filename, "r")
+	if not file then
+		return nil
 	end
+	local output = file:read("a"):match("^%s*(.-)%s*$" or "")
+	file:close()
+	return output
+end
+
+local function run_cmd(cmd)
+	local handle, _ = io.popen(cmd)
+	if not handle then
+		return nil
+	end
+	local output = handle:read("*a"):match("^%s*(.-)%s*$" or "")
+	return output
 end
 
 local function h(color)
 	return string.gsub(color, "#", "")
 end
 
-local function is_client_class(tag, className)
-	for _, c in ipairs(tag:clients()) do
-		if c.class == className then
-			return true
-		end
+local function add_padding(...)
+	local args = { ... }
+	local ret = " "
+	for _, text in ipairs(args) do
+		ret = ret .. text .. " "
 	end
-	return false
+	return ret
 end
 
-local function update_tagname(tag)
-	if #tag:clients() <= 0 then
-		tag.name = tag.num
-	elseif is_client_class(tag, "firefox") then
-		tag.name = tag.num .. ": "
-	elseif is_client_class(tag, "Spotify") then
-		tag.name = tag.num .. ": "
-	elseif is_client_class(tag, "MuPDF") then
-		tag.name = tag.num .. ": "
-	elseif is_client_class(tag, "Alacritty") then
-		tag.name = tag.num .. ": "
-	elseif is_client_class(tag, "fzf_run") then
-		tag.name = tag.num
-	else
-		tag.name = tag.num .. ": 󰘔"
-	end
+-- [[ Icons ]]
 
-	if tag.is_win_sticky then
-		tag.name = tag.name .. "~"
-	end
-end
+local battery_icons = {
+	["100_charging"] = "󰂅",
+	["100"] = "󰁹",
+	["90_charging"] = "󰂋",
+	["90"] = "󰂂",
+	["80_charging"] = "󰂊",
+	["80"] = "󰂁",
+	["70_charging"] = "󰢞",
+	["70"] = "󰂀",
+	["60_charging"] = "󰂉",
+	["60"] = "󰁿",
+	["50_charging"] = "󰢝",
+	["50"] = "󰁾",
+	["40_charging"] = "󰂈",
+	["40"] = "󰁽",
+	["30_charging"] = "󰂇",
+	["30"] = "󰁼",
+	["20_charging"] = "󰂆",
+	["20"] = "󰁻",
+	["10_charging"] = "󰢜",
+	["10"] = "󰁺",
+}
 
-local last_client = nil
+local windows_icons = {
+	["firefox"] = "",
+	["Spotify"] = "",
+	["MuPDF"] = "",
+	["Alacritty"] = "",
+	["_others"] = "󰘔",
+}
 
-local function move_to_the_last_selected_win()
-	if last_client then
-		if last_client.screen then --FIX this line causes an 'invalid object' error
-			awful.screen.focus(last_client.screen)
-		end
+local volume_icons = {
+	["volume_up"] = "󰕾",
+	["mute"] = "󰖁",
+}
 
-		local last_tag = last_client.first_tag
-		if last_tag then
-			last_tag:view_only()
-		end
+local brightness_icon = "󰖨"
 
-		client.focus = last_client
-		last_client:raise()
-	end
-end
+local temperature_icons = {
+	["empty"] = "",
+	["quarter"] = "",
+	["half"] = "",
+	["three_quarters"] = "",
+	["full"] = "",
+}
 
-local function update_battery(batterywidget)
-	local capacity_file, err = io.open("/sys/class/power_supply/BAT0/capacity", "r")
-	if not capacity_file then
-		naughty.notify({
-			preset = naughty.config.presets.critical,
-			title = "Oops, error when reading the battery capacity sys file: " .. err,
-			text = awesome.startup_errors,
-		})
-		return
-	end
-	local battery_capacity = tonumber(capacity_file:read("a"))
-	capacity_file:close()
+local wifi_icons = {
+	["off"] = "󰤮",
+	["4"] = "󰤨",
+	["3"] = "󰤥",
+	["2"] = "󰤢",
+	["1"] = "󰤟",
+}
 
-	local status_file, err = io.open("/sys/class/power_supply/BAT0/status", "r")
-	if not status_file then
-		naughty.notify({
-			preset = naughty.config.presets.critical,
-			title = "Oops, error when reading the battery capacity file: " .. err,
-			text = awesome.startup_errors,
-		})
-		return
-	end
-	local battery_status = status_file:read("a"):match("^%s*(.-)%s*$")
-	status_file:close()
+-- [[ Functions ]]
 
-	local is_charging = battery_status == "Charging"
-	local battery_icon
-	if battery_capacity == 100 then
-		if is_charging then
-			battery_icon = "󰂅"
-		else
-			battery_icon = "󰁹"
-		end
-	elseif battery_capacity >= 90 then
-		if is_charging then
-			battery_icon = "󰂋"
-		else
-			battery_icon = "󰂂"
-		end
-	elseif battery_capacity >= 80 then
-		if is_charging then
-			battery_icon = "󰂊"
-		else
-			battery_icon = "󰂁"
-		end
-	elseif battery_capacity >= 70 then
-		if is_charging then
-			battery_icon = "󰢞"
-		else
-			battery_icon = "󰂀"
-		end
-	elseif battery_capacity >= 60 then
-		if is_charging then
-			battery_icon = "󰂈"
-		else
-			battery_icon = "󰁿"
-		end
-	elseif battery_capacity >= 50 then
-		if is_charging then
-			battery_icon = "󰂈"
-		else
-			battery_icon = "󰁾"
-		end
-	elseif battery_capacity >= 40 then
-		if is_charging then
-			battery_icon = "󰂈"
-		else
-			battery_icon = "󰁽"
-		end
-	elseif battery_capacity >= 30 then
-		if is_charging then
-			battery_icon = "󰂇"
-		else
-			battery_icon = "󰁼"
-		end
-	elseif battery_capacity >= 20 then
-		if is_charging then
-			battery_icon = "󰂆"
-		else
-			battery_icon = "󰁻"
-		end
-	else
-		if is_charging then
-			battery_icon = "󰢜"
-		else
-			battery_icon = "󰁺"
-		end
-	end
-
-	batterywidget.text = " " .. battery_icon .. " " .. battery_capacity .. "% "
-end
-
-local function update_brightness(mybrightnesswidget)
-	local max_brightness_file, err = io.open("/sys/class/backlight/intel_backlight/max_brightness", "r")
-	if not max_brightness_file then
-		naughty.notify({
-			preset = naughty.config.presets.critical,
-			title = "Oops, error when reading the max brightness sys file: " .. err,
-			text = awesome.startup_errors,
-		})
-		return
-	end
-	local max_brightness = tonumber(max_brightness_file:read("a"))
-	max_brightness_file:close()
-
-	local brightness_file, err = io.open("/sys/class/backlight/intel_backlight/brightness", "r")
-	if not brightness_file then
-		naughty.notify({
-			preset = naughty.config.presets.critical,
-			title = "Oops, error when reading the brightness sys file: " .. err,
-			text = awesome.startup_errors,
-		})
-		return
-	end
-	local brightness = tonumber(brightness_file:read("a"))
-	brightness_file:close()
-
-	local brightness_perc = math.floor((brightness / max_brightness) * 100)
-
-	mybrightnesswidget.text = " 󰖨 " .. brightness_perc .. "% "
-end
-
-local function update_capslock(mycapslockwidget)
-	local handle = io.popen("xset -q | grep Caps")
-	if not handle then
-		naughty.notify({
-			preset = naughty.config.presets.critical,
-			title = "Oops, error when reading the command output: " .. err,
-			text = awesome.startup_errors,
-		})
-		return
-	end
-	local output = handle:read("*a"):match("^%s*(.-)%s*$" or "")
-	handle:close()
-	local is_capslock_on = output:find("^00: Caps Lock:   on")
-	if is_capslock_on then
-		mycapslockwidget.text = " 󰪛 "
-	else
-		mycapslockwidget.text = ""
-	end
-end
-
-local function update_soundvolume(mysoundvolumewidget)
-	local handle = io.popen("amixer get Master | grep -oP '\\d+%' | head -n 1")
-	if not handle then
-		naughty.notify({
-			preset = naughty.config.presets.critical,
-			title = "Oops, error when reading the command output: " .. err,
-			text = awesome.startup_errors,
-		})
-		return
-	end
-	local output = handle:read("*a"):match("^%s*(.-)%s*$" or "")
-	local icon = "󰕾"
-	local volume = string.gsub(output, "%%", "")
-	volume = tonumber(volume)
-	if volume <= 0 then
-		icon = "󰖁"
-	end
-	handle:close()
-	mysoundvolumewidget.text = " " .. icon .. " " .. output .. " "
-end
-
-local function update_temperature(mytemperaturewidget)
-	local handle = io.popen("sensors | grep 'acpitz-acpi-0' -A 2 | grep 'temp1:' | awk '{print $2}'")
-	if not handle then
-		naughty.notify({
-			preset = naughty.config.presets.critical,
-			title = "Oops, error when reading the command output: " .. err,
-			text = awesome.startup_errors,
-		})
-		return
-	end
-	local output = handle:read("*a"):match("^%s*(.-)%s*$" or "")
-	handle:close()
-	local value_s = string.gsub(output, "+", "")
-	value_s = string.gsub(value_s, "°C", "")
-	local value = tonumber(value_s)
-	local icon
-	if value <= 40 then
-		icon = ""
-	elseif value <= 50 then
-		icon = ""
-	elseif value <= 60 then
-		icon = ""
-	elseif value <= 70 then
-		icon = ""
-	else
-		icon = ""
-	end
-	mytemperaturewidget.text = " " .. icon .. " " .. value .. "°C "
-end
-
-local function update_wifisignal(mywifisignalwidget)
-	awful.spawn.easy_async_with_shell(
-		"nmcli -t -f active,ssid,signal dev wifi | grep '^yes' | awk -F: '{print $3}' | awk '{print $1}'",
-		function(stdout)
-			local signal_strength = tonumber(stdout:match("^[^\n\r]+"))
-
-			if not signal_strength then
-				mywifisignalwidget.text = " 󰤮 "
-			elseif signal_strength >= 80 then
-				mywifisignalwidget.text = " 󰤨 "
-			elseif signal_strength >= 60 then
-				mywifisignalwidget.text = " 󰤥 "
-			elseif signal_strength >= 40 then
-				mywifisignalwidget.text = " 󰤢 "
-			else
-				mywifisignalwidget.text = " 󰤟 "
-			end
-		end
-	)
-end
-
-local function setup_tags(s)
+local function set_tags(s)
 	local default_tags_names = { "1", "2", "3", "4", "5", "6", "7 ", "8", "9" }
-
 	for i, name in ipairs(default_tags_names) do
 		awful.tag.add(name, {
 			screen = s,
@@ -349,20 +168,183 @@ local function setup_tags(s)
 	end
 end
 
--- [[ Wibox ]]
+local function set_wallpaper()
+	if beautiful.wallpaper then
+		gears.wallpaper.maximized(beautiful.wallpaper)
+	elseif beautiful.wallpaper_color then
+		gears.wallpaper.set(beautiful.wallpaper_color)
+	end
+end
 
-local n_tags = 9 --NOTE and for some raison a mystrious number
+local function update_tagname(tag)
+	if #tag:clients() == 0 or tag:clients()[1].class == "fzf_run" then
+		tag.name = tag.num
+	else
+		local tag_icon = windows_icons["_others"]
+		for _, c in ipairs(tag:clients()) do
+			if windows_icons[c.class] ~= nil then
+				tag_icon = windows_icons[c.class]
+				break
+			end
+		end
+		tag.name = tag.num .. ": " .. tag_icon
+	end
 
-local mytextclock_format = '<span foreground="' .. beautiful.textclock_fg .. '"> %a %b %d, %H:%M </span>'
-local mytextclock = wibox.widget.textclock(mytextclock_format)
+	if tag.is_win_sticky then
+		tag.name = tag.name .. "~"
+	end
+end
+
+local function update_battery(mywidget)
+	local battery_capacity_file_output = read_file("/sys/class/power_supply/BAT0/capacity")
+	if not battery_capacity_file_output then
+		mywidget.text = add_padding(default_widget_text)
+		return
+	end
+
+	local battery_status_file_output = read_file("/sys/class/power_supply/BAT0/status")
+	if not battery_status_file_output then
+		mywidget.text = add_padding(default_widget_text)
+		return
+	end
+
+	local battery_capacity = tonumber(battery_capacity_file_output)
+	local is_charging = battery_status_file_output == "Charging"
+
+	local icon_name = tostring(math.floor(battery_capacity / 10) * 10)
+	if is_charging then
+		icon_name = icon_name .. "_charging"
+	end
+
+	mywidget.text = add_padding(battery_icons[icon_name], battery_capacity .. "%")
+end
+
+local function update_brightness(mywidget)
+	if not cache["max_brightness_file_output"] then
+		cache["max_brightness_file_output"] = read_file("/sys/class/backlight/intel_backlight/max_brightness")
+		if not cache["max_brightness_file_output"] then
+			mywidget.text = add_padding(default_widget_text)
+			return
+		end
+	end
+	local max_brightness_file_output = cache["max_brightness_file_output"]
+
+	local brightness_file_output = read_file("/sys/class/backlight/intel_backlight/brightness")
+	if not brightness_file_output then
+		mywidget.text = default_widget_text
+		return
+	end
+
+	local max_brightness = tonumber(max_brightness_file_output)
+	local brightness = tonumber(brightness_file_output)
+
+	local brightness_perc = math.floor((brightness / max_brightness) * 100)
+
+	mywidget.text = add_padding(brightness_icon, brightness_perc .. "%")
+end
+
+local function update_soundvolume(mywidget)
+	local volume_cmd_output = run_cmd("amixer get Master | grep -oP '\\d+%' | head -n 1")
+	if not volume_cmd_output then
+		mywidget.text = add_padding(default_widget_text)
+		return
+	end
+
+	local icon = volume_icons["volume_up"]
+	if volume_cmd_output == "0%" then
+		icon = volume_icons["mute"]
+	end
+
+	mywidget.text = add_padding(icon, volume_cmd_output) --NOTE volume_cmd_output includes the % sign
+end
+
+local function update_temperature(mywidget)
+	local temperature_cmd_output = run_cmd("sensors | grep 'acpitz-acpi-0' -A 2 | grep 'temp1:' | awk '{print $2}'")
+	if not temperature_cmd_output then
+		mywidget.text = add_padding(default_widget_text)
+		return
+	end
+
+	local _temperature_str = string.gsub(temperature_cmd_output, "%+(.-)°C", "%1")
+	local temperature = tonumber(_temperature_str)
+
+	local icon
+	if temperature <= 40 then
+		icon = temperature_icons["empty"]
+	elseif temperature <= 50 then
+		icon = temperature_icons["quarter"]
+	elseif temperature <= 60 then
+		icon = temperature_icons["half"]
+	elseif temperature <= 70 then
+		icon = temperature_icons["three_quarters"]
+	else
+		icon = temperature_icons["full"]
+	end
+
+	mywidget.text = add_padding(icon, temperature .. "°C")
+end
+
+local function update_wifisignal(mywidget)
+	awful.spawn.easy_async_with_shell(
+		"nmcli -t -f active,ssid,signal dev wifi | grep '^yes' | awk -F: '{print $3}' | awk '{print $1}'",
+		function(output)
+			local signal_strength = tonumber(output:match("^[^\n\r]+"))
+
+			if not signal_strength then
+				mywidget.text = add_padding(wifi_icons["off"])
+			elseif signal_strength >= 80 then
+				mywidget.text = add_padding(wifi_icons["4"])
+			elseif signal_strength >= 60 then
+				mywidget.text = add_padding(wifi_icons["3"])
+			elseif signal_strength >= 40 then
+				mywidget.text = add_padding(wifi_icons["2"])
+			else
+				mywidget.text = add_padding(wifi_icons["1"])
+			end
+		end
+	)
+end
+
+-- [[ Clock widget ]]
+
+local myclockwidget_format = '<span foreground="' .. beautiful.textclock_fg .. '"> %a %b %d, %H:%M </span>'
+local myclockwidget = wibox.widget.textclock(myclockwidget_format)
 do
-	mytextclock = wibox.container.background(mytextclock, beautiful.textclock_bg)
-	mytextclock.widget:buttons(awful.util.table.join(awful.button({}, 1, nil, function()
+	myclockwidget = wibox.container.background(myclockwidget, beautiful.textclock_bg)
+	myclockwidget.widget:buttons(awful.util.table.join(awful.button({}, 1, nil, function()
 		awful.spawn(terminal .. ' -e nvim "' .. os.getenv("HOME") .. '/Organizer/home.wiki"')
 	end)))
 end
 
-local mytaglist_buttons = gears.table.join(
+-- [[ Tags widgets ]]
+
+local mytaglistwidget_template = {
+	{
+		{
+			id = "text_role",
+			widget = wibox.widget.textbox,
+		},
+		left = 10,
+		right = 10,
+		widget = wibox.container.margin,
+	},
+	id = "background_role",
+	widget = wibox.container.background,
+}
+
+local function mytaglistwidget_callback(self, tag, index, objects)
+	if tag.selected or tag == awful.screen.focused().selected_tag then
+		self:get_children_by_id("background_role")[1].bg = beautiful.taglist_bg_focus
+	else
+		self:get_children_by_id("background_role")[1].bg = beautiful.taglist_bg_normal
+	end
+end
+
+local function mytaglistwidget_filter(t)
+	return #t:clients() > 0 or t == awful.screen.focused().selected_tag
+end
+
+local mytaglistwidget_buttons = gears.table.join(
 	awful.button({}, 1, function(t)
 		t:view_only()
 	end),
@@ -390,31 +372,7 @@ local mytaglist_buttons = gears.table.join(
 	end)
 )
 
-local mytaglist_widget_template = {
-	{
-		{
-			id = "text_role",
-			widget = wibox.widget.textbox,
-		},
-		left = 10,
-		right = 10,
-		widget = wibox.container.margin,
-	},
-	id = "background_role",
-	widget = wibox.container.background,
-}
-
-local function mytaglist_callback(self, tag, index, objects)
-	if tag.selected or tag == awful.screen.focused().selected_tag then
-		self:get_children_by_id("background_role")[1].bg = beautiful.taglist_bg_focus
-	else
-		self:get_children_by_id("background_role")[1].bg = beautiful.taglist_bg_normal
-	end
-end
-
-local function mytaglist_filter(t)
-	return #t:clients() > 0 or t == awful.screen.focused().selected_tag
-end
+-- [[ Right-side widgets ]]
 
 local mybatterywidget = wibox.widget.textbox()
 update_battery(mybatterywidget)
@@ -422,8 +380,7 @@ update_battery(mybatterywidget)
 local mybrightnesswidget = wibox.widget.textbox()
 update_brightness(mybrightnesswidget)
 
-local mycapslockwidget = wibox.widget.textbox()
-update_capslock(mycapslockwidget)
+--ADD capslock widget
 
 local mysoundvolumewidget = wibox.widget.textbox()
 update_soundvolume(mysoundvolumewidget)
@@ -434,35 +391,29 @@ update_temperature(mytemperaturewidget)
 local mywifisignalwidget = wibox.widget.textbox()
 update_wifisignal(mywifisignalwidget)
 
-local mytimer = gears.timer({ timeout = 1 })
-mytimer:connect_signal("timeout", function()
+local mywidgets_timer = gears.timer({ timeout = 2 })
+mywidgets_timer:connect_signal("timeout", function()
 	update_battery(mybatterywidget)
 	update_brightness(mybrightnesswidget)
-	update_capslock(mycapslockwidget)
 	update_soundvolume(mysoundvolumewidget)
 	update_temperature(mytemperaturewidget)
 	update_wifisignal(mywifisignalwidget)
 end)
-mytimer:start()
+mywidgets_timer:start()
 
-gears.timer({
-	timeout = 10,
-	call_now = true,
-	autostart = true,
-	callback = function() end,
-})
+-- [[ Screens setup ]]
 
 awful.screen.connect_for_each_screen(function(s)
-	set_wallpaper(s)
-	setup_tags(s)
+	set_tags(s)
+	set_wallpaper()
 
-	s.mytaglist = awful.widget.taglist({
+	s.mytaglistwidget = awful.widget.taglist({
 		screen = s,
-		filter = mytaglist_filter,
-		buttons = mytaglist_buttons,
-		widget_template = mytaglist_widget_template,
+		filter = mytaglistwidget_filter,
+		buttons = mytaglistwidget_buttons,
+		widget_template = mytaglistwidget_template,
 		layout = wibox.layout.fixed.horizontal,
-		create_callback = mytaglist_callback,
+		create_callback = mytaglistwidget_callback,
 	})
 
 	s.mywibox = awful.wibar({ position = beautiful.wibox_position, screen = s })
@@ -470,23 +421,22 @@ awful.screen.connect_for_each_screen(function(s)
 	s.mywibox:setup({
 		{
 			layout = wibox.layout.fixed.horizontal,
-			s.mytaglist,
+			s.mytaglistwidget,
 		},
 		nil,
 		{
 			layout = wibox.layout.fixed.horizontal,
-			-- mycapslockwidget,
 			-- wibox.widget.systray(),
 			mywifisignalwidget,
 			mysoundvolumewidget,
 			mytemperaturewidget,
 			mybrightnesswidget,
 			mybatterywidget,
-			mytextclock,
+			myclockwidget,
 		},
 		layout = wibox.layout.align.horizontal,
 	})
-	--ADD an indication of the current layout
+	--ADD an indication for the current layout
 end)
 
 -- [[ Commands ]]
@@ -515,7 +465,45 @@ local locker_cmd = "i3lock --color="
 	.. h(beautiful.fg_normal)
 	.. " --indicator --radius=100 --clock"
 
--- [[ Key Bindings ]]
+local screenshot_cmd = 'scrot -s -F "$HOME/Screenshots/$(date +"%s").png"'
+
+local prompt_cmd = terminal .. ' --class fzf_run -e "$HOME/Scripts/fzf_run.sh"'
+--FIX make it scripts-independent
+
+-- [[ Some key bindings functions ]]
+
+local last_client = nil
+
+local function move_to_the_last_selected_win()
+	if last_client then
+		if last_client.screen then --FIX this line causes an 'invalid object' error
+			awful.screen.focus(last_client.screen)
+		end
+
+		local last_tag = last_client.first_tag
+		if last_tag then
+			last_tag:view_only()
+		end
+
+		client.focus = last_client
+		last_client:raise()
+	end
+end
+
+local function toggle_stickiness(c)
+	c.sticky = not c.sticky
+	for _, tag in ipairs(c:tags()) do
+		if c.sticky then
+			tag.name = tag.name .. "~"
+			tag.is_win_sticky = true
+		else
+			tag.name = string.gsub(tag.name, "~", "")
+			tag.is_win_sticky = false
+		end
+	end
+end
+
+-- [[ Key bindings ]]
 
 globalkeys = gears.table.join(
 	awful.key({ modkey, "Shift" }, "r", awesome.restart, { description = "reload awesome", group = "awesome" }),
@@ -585,8 +573,8 @@ globalkeys = gears.table.join(
 	end, { description = "open a terminal", group = "launcher" }),
 
 	awful.key({ modkey }, "p", function()
-		awful.spawn.with_shell(terminal .. ' --class fzf_run -e "$HOME/Scripts/fzf_run.sh"')
-	end, { description = "open fzf_run", group = "launcher" }),
+		awful.spawn.with_shell(prompt_cmd)
+	end, { description = "open the prompt", group = "launcher" }),
 	--FIX the window is slow to open
 
 	awful.key({ modkey }, "d", function()
@@ -594,7 +582,7 @@ globalkeys = gears.table.join(
 	end, { description = "lock the screen", group = "awesome" }),
 
 	awful.key({ modkey }, "s", function()
-		awful.spawn.with_shell('scrot -s -F "$HOME/Screenshots/$(date +"%s").png"')
+		awful.spawn.with_shell(screenshot_cmd)
 	end, { description = "take a screenshot", group = "launcher" }),
 
 	awful.key({ modkey }, "j", function()
@@ -644,26 +632,14 @@ clientkeys = gears.table.join(
 		c.ontop = not c.ontop
 	end, { description = "toggle keep on top", group = "client" }),
 
-	awful.key({ modkey }, "0", function(c)
-		c.sticky = not c.sticky
-		for _, tag in ipairs(c:tags()) do
-			if c.sticky then
-				tag.name = tag.name .. "~"
-				tag.is_win_sticky = true
-			else
-				tag.name = string.gsub(tag.name, "~", "")
-				tag.is_win_sticky = false
-			end
-		end
-	end, { description = "toggle stickiness", group = "client" })
+	awful.key({ modkey }, "0", toggle_stickiness, { description = "toggle stickiness", group = "client" })
 )
 
-for i = 1, n_tags do
+for i = 1, 9 do
 	globalkeys = gears.table.join(
 		globalkeys,
 
 		awful.key({ modkey }, "#" .. i + 9, function()
-			last_selected_tag = client.focus and client.focus.first_tag or nil
 			local screen = awful.screen.focused()
 			local tag = screen.tags[i]
 			if tag then
@@ -699,6 +675,10 @@ for i = 1, n_tags do
 	)
 end
 
+root.keys(globalkeys)
+
+-- [[ Buttons ]]
+
 clientbuttons = gears.table.join(
 	awful.button({}, 1, function(c)
 		c:emit_signal("request::activate", "mouse_click", { raise = true })
@@ -720,8 +700,6 @@ clientbuttons = gears.table.join(
 		awful.mouse.client.resize(c)
 	end)
 )
-
-root.keys(globalkeys)
 
 -- [[ Rules ]]
 
@@ -846,3 +824,5 @@ tag.connect_signal("property::selected", function(t)
 end)
 
 --FIX select primary screen by default at startup
+
+--ADD run an xrandr script when a screen is attached
