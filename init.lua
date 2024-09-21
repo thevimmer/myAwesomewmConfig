@@ -42,7 +42,7 @@ end
 
 -- [[ Definitions ]]
 
-local terminal = "alacritty" --NOTE make sure you change the classname too below
+local terminal = "kitty" --NOTE make sure you change the classname too below
 local modkey = "Mod4"
 local default_widget_text = "n/a"
 
@@ -73,15 +73,6 @@ local function read_file(filename)
 	end
 	local output = file:read("a"):match("^%s*(.-)%s*$" or "")
 	file:close()
-	return output
-end
-
-local function run_cmd(cmd)
-	local handle, _ = io.popen(cmd)
-	if not handle then
-		return nil
-	end
-	local output = handle:read("*a"):match("^%s*(.-)%s*$" or "")
 	return output
 end
 
@@ -127,8 +118,8 @@ local windows_icons = {
 	["firefox"] = "",
 	["Spotify"] = "",
 	["MuPDF"] = "",
-	["Alacritty"] = "",
-	["_others"] = "󰘔",
+	["kitty"] = "",
+	["_"] = "󰘔",
 }
 
 local volume_icons = {
@@ -180,7 +171,7 @@ local function update_tagname(tag)
 	if #tag:clients() == 0 or tag:clients()[1].class == "fzf_run" then
 		tag.name = tag.num
 	else
-		local tag_icon = windows_icons["_others"]
+		local tag_icon = windows_icons["_"]
 		for _, c in ipairs(tag:clients()) do
 			if windows_icons[c.class] ~= nil then
 				tag_icon = windows_icons[c.class]
@@ -197,7 +188,7 @@ end
 
 local function update_battery(mywidget)
 	local battery_capacity_file_output = read_file("/sys/class/power_supply/BAT0/capacity")
-	if not battery_capacity_file_output then
+	if not battery_capacity_file_output then --FIX the battery widget disapeared once for no raison
 		mywidget.text = add_padding(default_widget_text)
 		return
 	end
@@ -244,29 +235,30 @@ local function update_brightness(mywidget)
 end
 
 local function update_soundvolume(mywidget)
-	local volume_cmd_output = run_cmd("amixer get Master | grep -oP '\\d+%' | head -n 1")
-	if not volume_cmd_output then
-		mywidget.text = add_padding(default_widget_text)
-		return
-	end
+	awful.spawn.easy_async_with_shell("amixer get Master | rg -oP '\\d+%' | head -n 1", function(volume_cmd_output)
+		local volume_str = volume_cmd_output:match("^[^\n\r]+")
+		if volume_str == nil then
+			mywidget.text = add_padding(default_widget_text)
+			return
+		end
 
-	local icon = volume_icons["volume_up"]
-	if volume_cmd_output == "0%" then
-		icon = volume_icons["mute"]
-	end
+		local icon = volume_icons["volume_up"]
+		if volume_str == "0%" then
+			icon = volume_icons["mute"]
+		end
 
-	mywidget.text = add_padding(icon, volume_cmd_output) --NOTE volume_cmd_output includes the % sign
+		mywidget.text = add_padding(icon, volume_str) --NOTE volume_str includes the % sign
+	end)
 end
 
 local function update_temperature(mywidget)
-	local temperature_cmd_output = run_cmd("sensors | grep 'acpitz-acpi-0' -A 2 | grep 'temp1:' | awk '{print $2}'")
-	if not temperature_cmd_output then
+	local temperature_file_output = read_file("/sys/class/thermal/thermal_zone0/temp")
+	if not temperature_file_output then
 		mywidget.text = add_padding(default_widget_text)
 		return
 	end
 
-	local _temperature_str = string.gsub(temperature_cmd_output, "%+(.-)°C", "%1")
-	local temperature = tonumber(_temperature_str)
+	local temperature = math.floor(tonumber(temperature_file_output) / 1000)
 
 	local icon
 	if temperature <= 40 then
@@ -286,21 +278,24 @@ end
 
 local function update_wifisignal(mywidget)
 	awful.spawn.easy_async_with_shell(
-		"nmcli -t -f active,ssid,signal dev wifi | grep '^yes' | awk -F: '{print $3}' | awk '{print $1}'",
-		function(output)
-			local signal_strength = tonumber(output:match("^[^\n\r]+"))
+		"nmcli -t -f active,ssid,signal dev wifi | rg '^yes' | awk -F: '{print $3}' | awk '{print $1}'",
+		function(signal_strength_output)
+			local signal_strength = tonumber(signal_strength_output:match("^[^\n\r]+"))
 
+			local icon
 			if not signal_strength then
-				mywidget.text = add_padding(wifi_icons["off"])
+				icon = wifi_icons["off"]
 			elseif signal_strength >= 80 then
-				mywidget.text = add_padding(wifi_icons["4"])
+				icon = wifi_icons["4"]
 			elseif signal_strength >= 60 then
-				mywidget.text = add_padding(wifi_icons["3"])
+				icon = wifi_icons["3"]
 			elseif signal_strength >= 40 then
-				mywidget.text = add_padding(wifi_icons["2"])
+				icon = wifi_icons["2"]
 			else
-				mywidget.text = add_padding(wifi_icons["1"])
+				icon = wifi_icons["1"]
 			end
+
+			mywidget.text = add_padding(icon, signal_strength .. "%")
 		end
 	)
 end

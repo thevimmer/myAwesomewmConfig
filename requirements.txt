@@ -1,8 +1,9 @@
 scrot
-alacritty
+kitty
 fzf
 i3lock-color
-i2c-tools (sensors)
+ripgrep
+alsa-utils
 networkmanager
 ttf-jetbrains-mono-nerd
-github.com/thevimmer/scripts
+github.com/thevimmer/scripts -> ~/Scripts
