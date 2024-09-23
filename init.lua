@@ -285,6 +285,8 @@ local function update_wifisignal(mywidget)
 			local icon
 			if not signal_strength then
 				icon = wifi_icons["off"]
+				mywidget.text = add_padding(icon)
+				return
 			elseif signal_strength >= 80 then
 				icon = wifi_icons["4"]
 			elseif signal_strength >= 60 then
@@ -470,8 +472,8 @@ local prompt_cmd = terminal .. ' --class fzf_run -e "$HOME/Scripts/fzf_run.sh"'
 local last_client = nil
 
 local function move_to_the_last_selected_win()
-	if last_client then
-		if last_client.screen then --FIX this line causes an 'invalid object' error
+	if last_client and last_client.valid then
+		if last_client.screen then
 			awful.screen.focus(last_client.screen)
 		end
 
