@@ -1,9 +1,0 @@
-scrot
-kitty
-fzf
-i3lock-color
-ripgrep
-alsa-utils
-networkmanager
-ttf-jetbrains-mono-nerd
-github.com/thevimmer/scripts -> ~/Scripts

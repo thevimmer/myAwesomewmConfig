@@ -464,7 +464,7 @@ local locker_cmd = "i3lock --color="
 
 local screenshot_cmd = 'scrot -s -F "$HOME/Screenshots/$(date +"%s").png"'
 
-local prompt_cmd = terminal .. ' --class fzf_run -e "$HOME/Scripts/fzf_run.sh"'
+local prompt_cmd = terminal .. ' --class fzf_run -e "$HOME/.config/awesome/myAwesomewmConfig/fzf_run.sh"'
 --FIX make it scripts-independent
 
 -- [[ Some key bindings functions ]]
